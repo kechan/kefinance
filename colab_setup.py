@@ -41,7 +41,7 @@ if bOnColab and not os.path.exists('/content/drive'):   #presence of /content in
 
 
 if bOnColab:
-  home = Path('/content/drive/My Drive')
+  home = Path('/content/drive/MyDrive')
   data = home/'kefinance'/'data'
   tmp = home/'tmp'
 elif bOnLocal:
