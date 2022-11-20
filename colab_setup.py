@@ -56,8 +56,9 @@ else:
 data = home/'kefinance'/'data'
 tmp = home/'tmp'
 
-if len([p for p in sys.path if '/Users/kelvinchan/kechan@gmail.com - Google Drive/My Drive/kefinance/utils' in p]) == 0: 
+if len([p for p in sys.path if 'kefinance/utils' in p]) == 0: 
   sys.path.insert(0, str(home/'kefinance'/'utils'))
+
 
 from kefinance import *
 #from kefinance import YahooFinance, AlphaVantage, Forex, Stock, Crypto, PutCallRatio
