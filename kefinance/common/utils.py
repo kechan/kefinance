@@ -26,3 +26,8 @@ def save_to_pickle(obj, filename):
 
 def say_done():
   return display.Audio(url="https://ssl.gstatic.com/dictionary/static/pronunciation/2019-10-21/audio/do/done_en_us_1.mp3", autoplay=True)
+
+def join_df(left, right, left_on, right_on=None, suffix='_y', how='left'):
+    if right_on is None: right_on = left_on
+    return left.merge(right, how=how, left_on=left_on, right_on=right_on, 
+                      suffixes=("", suffix))

@@ -63,20 +63,20 @@ if len([p for p in sys.path if 'kefinance/kefinance' in p]) == 0:
   sys.path.insert(0, str(home/'kefinance'/'kefinance'))
 
 
-# from kefinance import *
+from kefinance import *
 #from kefinance import YahooFinance, AlphaVantage, Forex, Stock, Crypto, PutCallRatio
 #from kefinance import plot_ma
 
-from kefinance.common.utils import load_from_pickle, save_to_pickle
+from kefinance.common.utils import load_from_pickle, save_to_pickle, join_df
 # from common_util import load_from_pickle, save_to_pickle
 # from small_fastai_utils import join_df
 
 # pre-defined relative dates
-# from kefinance import fifteen_year_ago, twelve_year_ago, ten_year_ago, five_year_ago, two_year_ago, one_year_ago, half_year_ago
-# from kefinance import three_month_ago, one_month_ago 
-# from kefinance import five_day_ago, ten_day_ago, yesterday, today
+from kefinance import fifteen_year_ago, twelve_year_ago, ten_year_ago, five_year_ago, two_year_ago, one_year_ago, half_year_ago
+from kefinance import three_month_ago, one_month_ago 
+from kefinance import five_day_ago, ten_day_ago, yesterday, today
 
-# from kefinance import fifteen_year_ago_s, twelve_year_ago_s, ten_year_ago_s, five_year_ago_s, two_year_ago_s, one_year_ago_s, half_year_ago_s
-# from kefinance import three_month_ago_s, one_month_ago_s 
-# from kefinance import five_day_ago_s, ten_day_ago_s, yesterday_s, today_s
+from kefinance import fifteen_year_ago_s, twelve_year_ago_s, ten_year_ago_s, five_year_ago_s, two_year_ago_s, one_year_ago_s, half_year_ago_s
+from kefinance import three_month_ago_s, one_month_ago_s 
+from kefinance import five_day_ago_s, ten_day_ago_s, yesterday_s, today_s
 
