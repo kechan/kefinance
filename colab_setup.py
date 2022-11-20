@@ -1,5 +1,5 @@
-import os, sys, time, pickle, pytz, gc
-from pathlib import *
+import os, sys, time, pickle, pytz, argparse, gc
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from functools import partial
 
@@ -21,13 +21,19 @@ plt.rcParams['axes.linewidth'] = 2
 plt.rcParams['legend.fontsize'] = 14
 plt.rcParams['font.size'] = 16
 
-def onColab(): return os.path.exists('/content/')
-# def onGCP(): return os.path.exists('/home/jupyter')
-def onLocal(): return os.path.exists('/Users/kelvinchan')
+bOnColab = Path('/content').exists()
+bOnLocal = Path('/Users/kelvinchan').exists()
 
-bOnColab = onColab()
-# bOnGCP = onGCP()
-bOnLocal = onLocal()
+description = 'Script to setup custom ML environment for Colab, Kaggle, GCP VM, and local machine.'
+
+parser = argparse.ArgumentParser(description=description)
+
+# argument for email address
+parser.add_argument('--gdrive_email_addr', type=str, help='gdrive address')
+
+args = parser.parse_args()
+
+gdrive_email_addr = args.gdrive_email_addr
 
 if bOnColab:
   from google.colab import auth
@@ -42,17 +48,15 @@ if bOnColab and not os.path.exists('/content/drive'):   #presence of /content in
 
 if bOnColab:
   home = Path('/content/drive/MyDrive')
-  data = home/'kefinance'/'data'
-  tmp = home/'tmp'
 elif bOnLocal:
-  home = Path('/Users/kelvinchan/Google Drive')
-  data = Path('/Users/kelvinchan/Documents/kefinance')
-  tmp = Path('/tmp')
+  home = Path(f'/Users/kelvinchan/{gdrive_email_addr} - Google Drive/My Drive')
 else:
   print("Unknown env")
 
-finance_utils_path = home/'kefinance'/'utils'
-sys.path.insert(0, str(finance_utils_path))
+data = home/'kefinance'/'data'
+tmp = home/'tmp'
+
+if len([p for p in sys.path if 'kefinance' in p]) == 0: sys.path.insert(0, str(home/'kefinance'/'utils'))
 
 from kefinance import *
 #from kefinance import YahooFinance, AlphaVantage, Forex, Stock, Crypto, PutCallRatio
