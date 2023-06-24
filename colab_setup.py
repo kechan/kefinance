@@ -68,8 +68,6 @@ from kefinance import *
 #from kefinance import plot_ma
 
 from kefinance.common.utils import load_from_pickle, save_to_pickle, join_df
-# from common_util import load_from_pickle, save_to_pickle
-# from small_fastai_utils import join_df
 
 # pre-defined relative dates
 from kefinance import fifteen_year_ago, twelve_year_ago, ten_year_ago, five_year_ago, two_year_ago, one_year_ago, half_year_ago

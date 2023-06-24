@@ -208,7 +208,16 @@ class AlphaVantage:
     return data
 
   @classmethod
-  def get_daily(cls, symbols, df_filename, metadata_filename, adjusted=True, series_type=None, save_every=100, wait_sec_at_save=60., output_size='compact', api_key=None):
+  def get_daily(cls, 
+                symbols, 
+                df_filename, 
+                metadata_filename, 
+                adjusted=True, 
+                series_type=None, 
+                save_every=100, 
+                wait_sec_at_save=60., 
+                output_size='compact', 
+                api_key=None):
     '''
     if symbols is a list of symbols (not tuple), then get the daily adjusted time series of the stock, signal, etc.
     if symbols is a list of 2-tuple, it is interpreted as (from_symbol, to_symbol), then get the daily forex 
@@ -219,6 +228,7 @@ class AlphaVantage:
     df_filename: name of dataframe file storing the time series daily adjusted data.
     metadata_filename: name of the corresponding metadata pickle file
     series_type: Optional, valid values: [SECURITY, FOREX, CRYPTO, INDEX]. Indicate the type of the series. Note if this is crypto, this needs to be explicit 
+    output_size: Optional, valid values: [compact, full]. If compact, only the latest 100 data points are returned. If full, all available data is returned.
 
     Output: 
 
