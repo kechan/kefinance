@@ -54,7 +54,7 @@ else:
   print("Unknown env")
 
 data = home/'kefinance'/'data'
-tmp = home/'tmp'
+tmp = home/'kefinance'/'tmp'
 
 # if len([p for p in sys.path if 'kefinance/utils' in p]) == 0: 
 #   sys.path.insert(0, str(home/'kefinance'/'utils'))
