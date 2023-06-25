@@ -5,4 +5,4 @@ from pathlib import Path
 bOnColab = Path('/content').exists()
 
 if bOnColab:
-  home = Path('/content/drive/MyDrive')  
+  home = Path('/content/drive/MyDrive/kefinance')  
