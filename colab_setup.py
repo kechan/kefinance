@@ -22,7 +22,7 @@ plt.rcParams['legend.fontsize'] = 14
 plt.rcParams['font.size'] = 16
 
 bOnColab = Path('/content').exists()
-bOnLocal = Path('/Users/kelvinchan').exists()
+bOnLocal = not bOnColab   # if you are not on colab, you are local
 
 description = 'Script to setup custom ML environment for Colab, Kaggle, GCP VM, and local machine.'
 
@@ -49,7 +49,8 @@ if bOnColab and not os.path.exists('/content/drive'):   #presence of /content in
 if bOnColab:
   home = Path('/content/drive/MyDrive')
 elif bOnLocal:
-  home = Path(f'/Users/kelvinchan/{gdrive_email_addr} - Google Drive/My Drive')
+#  home = Path(f'/Users/kelvinchan/{gdrive_email_addr} - Google Drive/My Drive')
+  home = Path.home()/f"{gdrive_email_addr} - Google Drive"/"My Drive"
 else:
   print("Unknown env")
 
