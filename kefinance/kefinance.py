@@ -754,7 +754,15 @@ class CBOE:
 
     
 
+def get_api_key(key_file_path, script_name, part=None):
 
+  usage_hint = f"{script_name} part {part}" if part is not None else script_name
+  api_keys_df = pd.read_feather(key_file_path)
+  api_key_row = api_keys_df.loc[api_keys_df['usage'] == usage_hint, 'value']
+  if api_key_row.empty:
+    raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
+
+  return api_key_row.iloc[0]
 
 
 def plot_ma(s_df):
