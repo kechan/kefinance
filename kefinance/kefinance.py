@@ -839,6 +839,11 @@ class APIKeyManager:
       # Construct usage hint
       script_name = os.path.basename(__file__) if script_name is None else script_name
       usage_hint = f"{script_name} part {part}" if part is not None else script_name
+
+      # load the key store again (in case it was updated by another process)
+      # this is a small file, so crossing finger that there's no corruption by 2 parties read/writing at
+      # the same time, since we don't have high concurrent use cases.
+      self.api_keys_df = pd.read_feather(self.key_store)
       
       # Update the last_used column for the corresponding key
       idx = self.api_keys_df[self.api_keys_df['usage'] == usage_hint].index
