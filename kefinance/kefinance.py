@@ -1,4 +1,6 @@
-import os, sys, time, pickle, urllib.request, requests, json, re, gc
+from typing import Union
+
+import os, sys, time, pickle, urllib.request, requests, json, re, tempfile, gc
 from pathlib import *
 from datetime import date, datetime, timedelta
 
@@ -217,7 +219,8 @@ class AlphaVantage:
                 save_every=100, 
                 wait_sec_at_save=60., 
                 output_size='compact', 
-                api_key=None):
+                api_key=None, 
+                use_temp_file=False):
     '''
     if symbols is a list of symbols (not tuple), then get the daily adjusted time series of the stock, signal, etc.
     if symbols is a list of 2-tuple, it is interpreted as (from_symbol, to_symbol), then get the daily forex 
@@ -234,6 +237,14 @@ class AlphaVantage:
 
     err_symbol_list: list of symbols that failed.
     '''
+
+    if use_temp_file:
+      temp_file = tempfile.NamedTemporaryFile(delete=False)
+      temp_filename = temp_file.name  # store the temporary filename so you can load it later
+      temp_file.close()  # close the file, we'll use it later
+      print(f'Using temp_filename: {temp_filename}')
+    else:
+      temp_filename = None
 
     # try to guess at what series_type is based on the type(symbols)
     if series_type is None and isinstance(symbols, list) and len(symbols) > 0:
@@ -335,6 +346,7 @@ class AlphaVantage:
         if len(dfs) == 0:
           continue
         df = pd.concat(dfs, axis=0)
+        df.reset_index(inplace=True)       # timestamp was the index
         if series_type == 'SECURITY' or series_type == 'INDEX':
           print('# of symbols: {}, len of df: {}'.format(df.symbol.nunique(), len(df)))
         elif series_type == 'FOREX':
@@ -344,37 +356,52 @@ class AlphaVantage:
         else:
           pass
 
-	# combine with whats done before
-        df.reset_index(inplace=True)       # timestamp was the index
-        time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
+        if use_temp_file:          
+          if Path(temp_filename).stat().st_size > 0:
+             # If the temp file has data, read it, concat with current df, and save back to temp file
+            temp_df = pd.read_feather(temp_filename)            
+            df = pd.concat([temp_df, df], axis=0, ignore_index=True)
 
-	# dedup and keep only the latest 
-        if series_type == 'SECURITY' or series_type == 'INDEX':
-          time_series_daily_df.drop_duplicates(subset=['timestamp', 'symbol'], keep='last', inplace=True)
-        elif series_type == 'FOREX':
-          time_series_daily_df.drop_duplicates(subset=['timestamp', 'from_symbol', 'to_symbol'], keep='last', inplace=True)
-        elif series_type == 'CRYPTO':
-          time_series_daily_df.drop_duplicates(subset=['timestamp', 'symbol', 'market'], keep='last', inplace=True)  
+          df.reset_index(drop=True).to_feather(temp_filename)
         else:
-          pass
+          # combine with whats done before          
+          time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
 
-        time_series_daily_df.reset_index(drop=True).to_feather(df_filename)  # 'datatime' was index
+          # Dedup and keep only the latest 
+          if series_type == 'SECURITY' or series_type == 'INDEX':
+            time_series_daily_df.drop_duplicates(subset=['timestamp', 'symbol'], keep='last', inplace=True)
+          elif series_type == 'FOREX':
+            time_series_daily_df.drop_duplicates(subset=['timestamp', 'from_symbol', 'to_symbol'], keep='last', inplace=True)
+          elif series_type == 'CRYPTO':
+            time_series_daily_df.drop_duplicates(subset=['timestamp', 'symbol', 'market'], keep='last', inplace=True)  
+          else:
+            pass
 
-	# merge with last_metadata 
-        merged_metadata = {**last_metadata, **metadata}
-        save_to_pickle(merged_metadata, metadata_filename)
+          time_series_daily_df.reset_index(drop=True).to_feather(df_filename)  # 'datatime' was index
 
         dfs = []
         gc.collect()
 
-        time.sleep(wait_sec_at_save)
+        # merge with last_metadata 
+        merged_metadata = {**last_metadata, **metadata}
+        save_to_pickle(merged_metadata, metadata_filename)
+
+        time.sleep(wait_sec_at_save)   # sleep at every save
 
     # Final save (remainder) 
     if len(dfs) > 0:
       df = pd.concat(dfs, axis=0)
       df.reset_index(inplace=True)       # timestamp was the index
-      time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
+      if use_temp_file:
+        temp_df = pd.read_feather(temp_filename)
+        df = pd.concat([temp_df, df], axis=0, ignore_index=True)
 
+        time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
+        # os.remove(temp_filename)  # remove the temporary file   # TODO: uncomment this after debug
+
+      else:
+        time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
+      # Dedup 
       if series_type == 'SECURITY' or series_type == 'INDEX':
         time_series_daily_df.drop_duplicates(subset=['timestamp', 'symbol'], keep='last', inplace=True)
       elif series_type == 'FOREX':
@@ -754,17 +781,6 @@ class CBOE:
 
     
 
-def get_api_key(key_file_path, script_name, part=None):
-
-  usage_hint = f"{script_name} part {part}" if part is not None else script_name
-  api_keys_df = pd.read_feather(key_file_path)
-  api_key_row = api_keys_df.loc[api_keys_df['usage'] == usage_hint, 'value']
-  if api_key_row.empty:
-    raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
-
-  return api_key_row.iloc[0]
-
-
 def plot_ma(s_df):
   '''
   df: a dataframe containing time series of one stock
@@ -795,3 +811,41 @@ def plot_ma(s_df):
   # ax.grid(True)
 
   plt.legend();
+
+
+class APIKeyManager:
+  def __init__(self, key_store: Union[str, Path] = 'alphavantage_keys_df') -> None:
+    key_store = Path(key_store)
+    if not key_store.exists():
+      raise ValueError(f"Error: key store '{key_store}' does not exist.")
+    
+    self.key_store = key_store  
+    self.api_keys_df = pd.read_feather(self.key_store)
+
+  def get_key(self, script_name=None, part=None) -> str:
+    script_name = os.path.basename(__file__) if script_name is None else script_name
+
+    usage_hint = f"{script_name} part {part}" if part is not None else script_name
+    api_key_row = self.api_keys_df.loc[self.api_keys_df['usage'] == usage_hint, 'value']
+    if api_key_row.empty:
+      raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
+
+    return api_key_row.iloc[0]
+  
+  def record_key_usage(self, script_name=None, part=None, last_used=datetime.now()) -> None:
+      """
+      Record the last usage of a specific API key.
+      """
+      # Construct usage hint
+      script_name = os.path.basename(__file__) if script_name is None else script_name
+      usage_hint = f"{script_name} part {part}" if part is not None else script_name
+      
+      # Update the last_used column for the corresponding key
+      idx = self.api_keys_df[self.api_keys_df['usage'] == usage_hint].index
+      if len(idx) == 0:
+        raise ValueError(f"No API key with usage hint '{usage_hint}' found.")
+      
+      self.api_keys_df.at[idx[0], 'last_used'] = last_used
+      
+      # Save the updated DataFrame back to the key store
+      self.api_keys_df.to_feather(self.key_store)
