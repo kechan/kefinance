@@ -818,12 +818,12 @@ class APIKeyManager:
   def __init__(self, key_store: Union[str, Path] = 'alphavantage_keys_df') -> None:
     key_store = Path(key_store)
     if not key_store.exists():
-      raise ValueError(f"Error: key store '{key_store}' does not exist.")
+      raise FileNotFoundError(f"Error: key store '{key_store}' does not exist.")
     
     self.key_store = key_store  
 
   def get_key(self, script_name=None, part=None) -> str:
-    self.api_keys_df = pd.read_feather(self.key_store)
+    self._read_keystore()
 
     script_name = os.path.basename(__file__) if script_name is None else script_name
 
@@ -833,7 +833,7 @@ class APIKeyManager:
       raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
     
     # Check if the key was ever used
-    last_used_time = api_key_row['last_used'].iloc[0]
+    last_used_time = api_key_row['last_used'].iloc[0]  # pick any, last_used should be same for the same key
     if not pd.isna(last_used_time):
       # If it has been used, check if it was used in the last 24 hours
       if datetime.now() - last_used_time < timedelta(hours=24):
@@ -841,25 +841,34 @@ class APIKeyManager:
 
     return api_key_row.iloc[0]
   
-  def record_key_usage(self, script_name=None, part=None, last_used=datetime.now()) -> None:
+  def record_key_usage(self, key, last_used=None) -> None:
       """
       Record the last usage of a specific API key.
       """
-      # Construct usage hint
-      script_name = os.path.basename(__file__) if script_name is None else script_name
-      usage_hint = f"{script_name} part {part}" if part is not None else script_name
+      if last_used is None:
+        last_used = datetime.now()  # right now (at time of call) should be default.
 
       # load the key store again (in case it was updated by another process)
       # this is a small file, so crossing finger that there's no corruption by 2 parties read/writing at
       # the same time, since we don't have high concurrent use cases.
-      self.api_keys_df = pd.read_feather(self.key_store)
+      # TODO: fix concurrency to be super robust and not risking corrupting the key store
+      self._read_keystore()
       
       # Update the last_used column for the corresponding key
-      idx = self.api_keys_df[self.api_keys_df['usage'] == usage_hint].index
+      idx = self.api_keys_df[self.api_keys_df['value'] == key].index
       if len(idx) == 0:
-        raise ValueError(f"No API key with usage hint '{usage_hint}' found.")
+        raise ValueError(f"No API key with value '{key}' found.")
       
-      self.api_keys_df.at[idx[0], 'last_used'] = last_used
+      self.api_keys_df.at[idx, 'last_used'] = last_used
       
       # Save the updated DataFrame back to the key store
       self.api_keys_df.to_feather(self.key_store)
+
+  def _read_keystore(self) -> None:
+    try:
+      self.api_keys_df = pd.read_feather(self.key_store)
+    except pd.errors.FeatherError as fe:
+      raise ValueError(f"Error reading feather format from key store '{self.key_store}': {fe}")
+    except Exception as e:        
+      raise ValueError(f"Error: {e}\nFailed to read key store '{self.key_store}'.")
+  
