@@ -132,3 +132,4 @@ dmypy.json
 *.pyc
 *.swp
 *.py.swo
+tests/data/*

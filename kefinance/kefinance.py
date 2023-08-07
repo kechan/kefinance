@@ -839,7 +839,7 @@ class APIKeyManager:
       if datetime.now() - last_used_time < timedelta(hours=24):
         raise ValueError(f"Error: API key with usage hint '{usage_hint}' was used in the last 24 hours.")
 
-    return api_key_row.iloc[0]
+    return api_key_row['value'].iloc[0]
   
   def record_key_usage(self, key, last_used=None) -> None:
       """
@@ -859,7 +859,7 @@ class APIKeyManager:
       if len(idx) == 0:
         raise ValueError(f"No API key with value '{key}' found.")
       
-      self.api_keys_df.at[idx, 'last_used'] = last_used
+      self.api_keys_df.loc[idx, 'last_used'] = last_used
       
       # Save the updated DataFrame back to the key store
       self.api_keys_df.to_feather(self.key_store)
