@@ -393,8 +393,9 @@ class AlphaVantage:
       df = pd.concat(dfs, axis=0)
       df.reset_index(inplace=True)       # timestamp was the index
       if use_temp_file:
-        temp_df = pd.read_feather(temp_filename)
-        df = pd.concat([temp_df, df], axis=0, ignore_index=True)
+        if Path(temp_filename).stat().st_size > 0:
+          temp_df = pd.read_feather(temp_filename)
+          df = pd.concat([temp_df, df], axis=0, ignore_index=True)
 
         time_series_daily_df = pd.concat([time_series_daily_df, df], axis=0, ignore_index=True)
         # os.remove(temp_filename)  # remove the temporary file   # TODO: uncomment this after debug
@@ -820,15 +821,23 @@ class APIKeyManager:
       raise ValueError(f"Error: key store '{key_store}' does not exist.")
     
     self.key_store = key_store  
-    self.api_keys_df = pd.read_feather(self.key_store)
 
   def get_key(self, script_name=None, part=None) -> str:
+    self.api_keys_df = pd.read_feather(self.key_store)
+
     script_name = os.path.basename(__file__) if script_name is None else script_name
 
     usage_hint = f"{script_name} part {part}" if part is not None else script_name
     api_key_row = self.api_keys_df.loc[self.api_keys_df['usage'] == usage_hint, 'value']
     if api_key_row.empty:
       raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
+    
+    # Check if the key was ever used
+    last_used_time = api_key_row['last_used'].iloc[0]
+    if not pd.isna(last_used_time):
+      # If it has been used, check if it was used in the last 24 hours
+      if datetime.now() - last_used_time < timedelta(hours=24):
+        raise ValueError(f"Error: API key with usage hint '{usage_hint}' was used in the last 24 hours.")
 
     return api_key_row.iloc[0]
   
