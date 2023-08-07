@@ -828,7 +828,7 @@ class APIKeyManager:
     script_name = os.path.basename(__file__) if script_name is None else script_name
 
     usage_hint = f"{script_name} part {part}" if part is not None else script_name
-    api_key_row = self.api_keys_df.loc[self.api_keys_df['usage'] == usage_hint, 'value']
+    api_key_row = self.api_keys_df.loc[self.api_keys_df['usage'] == usage_hint]
     if api_key_row.empty:
       raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
     
