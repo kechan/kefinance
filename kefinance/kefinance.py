@@ -822,43 +822,59 @@ class APIKeyManager:
     
     self.key_store = key_store  
 
-  def get_key(self, script_name=None, part=None) -> str:
+  def get_available_key(self) -> str:
+    '''
+    Retrieve an available key. Will raise ValueError if no valid key is found.        
+    '''
     self._read_keystore()
 
-    if script_name:
-      # script_name = os.path.basename(__file__) if script_name is None else script_name
-      usage_hint = f"{script_name} part {part}" if part is not None else script_name
-      api_key_row = self.api_keys_df.loc[self.api_keys_df['usage'] == usage_hint]
-      if api_key_row.empty:
-        raise ValueError(f"Error: API key with usage hint '{usage_hint}' not found.")
+    # Iterate through rows and find a key that's available
+    for _, row in self.api_keys_df.iterrows():
+      # last_used_time = row['last_used']
       
-      # Check if the key was ever used and when
-      last_used_time = api_key_row['last_used'].iloc[0]  # pick any, last_used should be same for the same key
-      is_locked = api_key_row['lock'].iloc[0]
-
-      # If it has been used, check if it was used in the last 24 hours or if it's locked    
-      if (not pd.isna(last_used_time) and datetime.now() - last_used_time < timedelta(hours=24)) or is_locked:
-        raise ValueError(f"Error: API key with usage hint '{usage_hint}' is not available.")      
-
-      return api_key_row['value'].iloc[0]
-    else: 
-      # Iterate through rows and find a key that's available
-      for _, row in self.api_keys_df.iterrows():
-        last_used_time = row['last_used']
+      # if (pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(hours=24)) and not row['lock']:
+      #   return row['value']
+      if self.is_key_available(row['value']):
+        return row['value']
         
-        if (pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(hours=24)) and not row['lock']:
-          return row['value']
-        
-      # If no available key is found, raise an error
-      raise ValueError("No available API key found.")
+    # If no available key is found
+    raise ValueError("No available API key found.")
+
+  def is_key_available(self, key) -> bool:
+    '''
+    Check if the given key is available. Returns True if the key is available, False otherwise.
+    '''
+    row = self.api_keys_df.query("value == @key")
+    if len(row) > 0:
+      row = row.iloc[0]
+      last_used_time = row['last_used']
+      if (pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(hours=24)) and not row['lock']:
+        return True
+      else:
+        return False
+
+    # If the key is not found
+    return False
 
   
-  def record_key_usage(self, key, last_used=None) -> None:
+  def record_key_usage(self, key, last_used=None, script_name=None, part_number=None) -> None:
       """
-      Record the last usage of a specific API key.
+       Record the usage of the given API key. Optionally, a custom timestamp and usage details can be provided.
+
+        :param key: The API key being used.
+        :param last_used: Optional custom timestamp for when the key was used.
+        :param script_name: Optional name of the script where the key was used.
+        :param part_number: Optional part number associated with the script.
+        :return: None
       """
       if last_used is None:
         last_used = datetime.now()  # right now (at time of call) should be default.
+
+      usage_str = None
+      if script_name: 
+        usage_str = f'{script_name}'
+      if part_number:
+        usage_str = f'{usage_str} part {part_number}'
 
       # load the key store again (in case it was updated by another process)
       # this is a small file, so crossing finger that there's no corruption by 2 parties read/writing at
@@ -871,27 +887,23 @@ class APIKeyManager:
       if len(idx) == 0:
         raise ValueError(f"No API key with value '{key}' found.")
       
-      self.api_keys_df.loc[idx, 'last_used'] = last_used
+      self.api_keys_df.loc[idx, ['last_used', 'last_usage']] = [last_used, usage_str]
       
       # Save the updated DataFrame back to the key store
-      self.api_keys_df.to_feather(self.key_store)
+      self.save()
 
 
-  def install_new_key(self, name: str, value: str, usage: str) -> None:
+  def install_new_key(self, name: str, value: str) -> None:
     '''
     name is logical key name
     value is the actual key value (random looking string)
-    usage is the "usage hint" and should be pattern of "script_name" or "script_name part N"
     '''
     self._read_keystore()
-    # check if usage is of pattern "script_name.py" or "script_name.py part N"
-    if not re.match(r'^\w+\.py(\spart\s\d+)?$', usage):
-      raise ValueError(f"Error: usage must be of pattern 'script_name.py' or 'script_name.py part N'.")
-    
-    new_key_row = pd.DataFrame([{'name': name, 'value': value, 'usage': usage, 'last_used': pd.NaT}])
+   
+    new_key_row = pd.DataFrame([{'name': name, 'value': value, 'last_used': pd.NaT}])
     self.api_keys_df = pd.concat([self.api_keys_df, new_key_row], axis=0, ignore_index=True)
 
-    self.api_keys_df.to_feather(self.key_store)
+    self.save()
 
   def remove_key(self, value: str) -> None:
     self._read_keystore()
@@ -901,7 +913,7 @@ class APIKeyManager:
     
     self.api_keys_df.drop(idx, inplace=True)
     self.api_keys_df.defrag_index(inplace=True)
-    self.api_keys_df.to_feather(self.key_store)
+    self.save()
 
   def lock(self, key) -> None:
     """ Lock a specific API key. """
@@ -911,20 +923,22 @@ class APIKeyManager:
     if len(idx) == 0:
         raise ValueError(f"No API key with value '{key}' found.")
     
-    self.api_keys_df.at[idx[0], 'lock'] = True
-    self.api_keys_df.to_feather(self.key_store)
+    self.api_keys_df.loc[idx, 'lock'] = True
+    self.save()
 
   def unlock(self, key) -> None:
-      """ Unlock a specific API key. """
-      self._read_keystore()
+    """ Unlock a specific API key. """
+    self._read_keystore()
 
-      idx = self.api_keys_df[self.api_keys_df['value'] == key].index
-      if len(idx) == 0:
-          raise ValueError(f"No API key with value '{key}' found.")
-      
-      self.api_keys_df.at[idx[0], 'lock'] = False
-      self.api_keys_df.to_feather(self.key_store)
+    idx = self.api_keys_df[self.api_keys_df['value'] == key].index
+    if len(idx) == 0:
+        raise ValueError(f"No API key with value '{key}' found.")
+    
+    self.api_keys_df.loc[idx, 'lock'] = False
+    self.save()
 
+  def save(self) -> None:
+    self.api_keys_df.to_feather(self.key_store)
   
   def _read_keystore(self) -> None:
     try:
