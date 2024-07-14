@@ -563,98 +563,6 @@ class Stock:
       self.api_key = api_key
       
     self.query_url = 'https://www.alphavantage.co/query'
-    
-  def get_daily_adjusted(self, output_size='compact', verbose=False):
-    # url = self.query_url + '?function=TIME_SERIES_DAILY_ADJUSTED&symbol={}&outputsize=full&apikey={}'.format(self.symbol, self.api_key)
-    # url = self.query_url + '?function=TIME_SERIES_DAILY_ADJUSTED&symbol={}&outputsize=compact&apikey={}'.format(self.symbol, self.api_key)
-    url = self.query_url + f'?function=TIME_SERIES_DAILY_ADJUSTED&symbol={self.symbol}&outputsize={output_size}&apikey={self.api_key}'
-
-    # print(url)
-    try:
-      with urllib.request.urlopen(url) as url:
-        data = json.loads(url.read().decode())
-        if verbose:
-          print(url.url, data)
-        ts_df = pd.DataFrame(data['Time Series (Daily)']).T
-        
-        ts_df.rename(columns={'1. open': 'open', '2. high': 'high', '3. low': 'low', '4. close': 'close', 
-                          '5. adjusted close': 'adjusted_close', '6. volume': 'volume', 
-                          '7. dividend amount': 'dividend_amt', '8. split coefficient': 'split_coeff'
-                          }, inplace=True)
-        
-        ts_df.sort_index(inplace=True)
-        
-        ts_df = ts_df.astype('float')
-        
-        ts_df['symbol'] = self.symbol
-        
-        ts_df.index.name = 'timestamp'
-        
-        gc.collect()
-        
-        metadata = data['Meta Data']
-    except Exception as e:
-      # e = sys.exc_info()[0]
-      # print(e)
-      raise RemoteDataError(f"{self.symbol}: No data fetched using Avantage. Failed to get proper data in dataframe and metadata (a dict)")
-      # RemoteDataError: No data fetched for symbol xyz using YahooDailyReader
-      return None, None
-      
-    return ts_df, metadata
-
-  def get_daily(self, output_size='compact', verbose=False):
-    # TODO: change url to use compact
-    url = self.query_url + '?function=TIME_SERIES_DAILY&symbol={}&outputsize=full&apikey={}'.format(self.symbol, self.api_key) 
-
-    with urllib.request.urlopen(url) as url:
-      data = json.loads(url.read().decode())
-      if verbose:
-        print(data)
-      ts_df = pd.DataFrame(data['Time Series (Daily)']).T
-      
-      ts_df.rename(columns={'1. open': 'open', '2. high': 'high', '3. low': 'low', '4. close': 'close', '5. volume': 'volume'}, inplace=True) 
-                         
-      ts_df.sort_index(inplace=True)
-      
-      ts_df = ts_df.astype('float')
-      
-      ts_df['symbol'] = self.symbol
-      
-      ts_df.index.name = 'timestamp'
-      
-      gc.collect()
-      
-      metadata = data['Meta Data']
-      
-      return ts_df, metadata
-
-  def get_intraday(self, interval='1min', verbose=False):
-    '''
-    Alphavantage supports interval: 1min, 5min, 15min, 30min, 60min
-    '''
-    url = self.query_url + '?function=TIME_SERIES_INTRADAY&symbol={}&interval={}&apikey={}'.format(self.symbol, interval, self.api_key)
-    with urllib.request.urlopen(url) as url:
-      data = json.loads(url.read().decode())
-      if verbose:
-        print(data)
-
-      ts_df = pd.DataFrame(data['Time Series ({})'.format(interval)]).T
-
-      col_regex = re.compile(r'.*?\.\s+(.*?)$')   # "1. open" -> open
-
-      ts_df.rename(columns={col: col_regex.match(col).group(1) for col in ts_df.columns}, inplace=True)
-
-      ts_df.sort_index(inplace=True)
-
-      ts_df = ts_df.astype('float')
-
-      ts_df['symbol'] = self.symbol
-
-      ts_df.index.name = 'timestamp'
-
-      metadata = data['Meta Data'] 
-
-    return ts_df, metadata
 
   def get_quote(self, verbose=False):
     url = self.query_url + '?function=GLOBAL_QUOTE&symbol={}&apikey={}'.format(self.symbol, self.api_key)
@@ -672,6 +580,76 @@ class Stock:
       ts_df.index.name = 'timestamp'
 
       return ts_df
+
+  def get_daily_adjusted(self, output_size='compact', verbose=False):
+    data = self._fetch_data('TIME_SERIES_DAILY_ADJUSTED', {'outputsize': output_size})
+    if verbose: print(data)
+    ts_df = self._to_dataframe(data, 'Time Series (Daily)')
+    self._rename_columns(ts_df, r'.*?\.\s+(.*?)$')
+    metadata = data['Meta Data']
+    return ts_df, metadata
+
+
+  def get_intraday(self, interval='1min', verbose=False):
+      """
+      Alphavantage supports interval: 1min, 5min, 15min, 30min, 60min
+      """
+      
+      data = self._fetch_data('TIME_SERIES_INTRADAY', {'interval': interval})
+      if verbose:
+          print(data)
+      ts_df = self._to_dataframe(data, f'Time Series ({interval})')
+      self._rename_columns(ts_df, r'.*?\.\s+(.*?)$')
+      metadata = data['Meta Data']
+      return ts_df, metadata
+
+
+  def get_daily(self, output_size='compact', verbose=False):
+    data = self._fetch_data('TIME_SERIES_DAILY', {'outputsize': output_size})
+    if verbose:
+        print(data)
+    ts_df = self._to_dataframe(data, 'Time Series (Daily)')
+    self._rename_columns(ts_df, r'.*?\.\s+(.*?)$')
+    metadata = data['Meta Data']
+    return ts_df, metadata
+
+  
+  def _fetch_data(self, function, params):
+    params['function'] = function   # url params
+    params['symbol'] = self.symbol
+    params['apikey'] = self.api_key
+    url = self.query_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+    try:
+      with urllib.request.urlopen(url) as response:
+        data = json.loads(response.read().decode())
+        if 'Error Message' in data:
+          specific_error_msg = data["Error Message"]
+          raise Exception(specific_error_msg)
+        return data
+    except Exception as e:
+      # raise RemoteDataError(f"{self.symbol}: Error fetching data using AlphaVantage.")
+      raise RemoteDataError(f"{self.symbol}: Error fetching data using AlphaVantage. {specific_error_msg if specific_error_msg else ''}")
+    
+  def _to_dataframe(self, data, series_key):
+    ts_df = pd.DataFrame(data[series_key]).T
+    ts_df.sort_index(inplace=True)
+    ts_df = ts_df.astype('float')
+    ts_df['symbol'] = self.symbol
+    ts_df.index.name = 'timestamp'
+    return ts_df
+  
+  def _rename_columns(self, df, pattern):
+    col_regex = re.compile(pattern)
+    
+    # Ensure that we only rename columns if they match the regex pattern
+    renamed_columns = {col: col_regex.match(col).group(1) 
+                       for col in df.columns 
+                       if col_regex.match(col)}
+    
+    df.rename(columns=renamed_columns, inplace=True)
+
+
+
 
 
 class Company:
@@ -848,7 +826,10 @@ class APIKeyManager:
     if len(row) > 0:
       row = row.iloc[0]
       last_used_time = row['last_used']
-      if (pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(hours=24)) and not row['lock']:
+      usage_count = row['usage_count']
+      
+      # if (pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(hours=24)) and not row['lock'] and usage_count < 25:
+      if not row['lock'] and usage_count < 25:
         return True
       else:
         return False
@@ -857,7 +838,7 @@ class APIKeyManager:
     return False
 
   
-  def record_key_usage(self, key, last_used=None, script_name=None, part_number=None) -> None:
+  def record_key_last_used_timestamp(self, key, last_used=None) -> None:
       """
        Record the usage of the given API key. Optionally, a custom timestamp and usage details can be provided.
 
@@ -870,11 +851,7 @@ class APIKeyManager:
       if last_used is None:
         last_used = datetime.now()  # right now (at time of call) should be default.
 
-      usage_str = None
-      if script_name: 
-        usage_str = f'{script_name}'
-      if part_number:
-        usage_str = f'{usage_str} part {part_number}'
+      current_ip = self.get_public_ip()
 
       # load the key store again (in case it was updated by another process)
       # this is a small file, so crossing finger that there's no corruption by 2 parties read/writing at
@@ -887,12 +864,55 @@ class APIKeyManager:
       if len(idx) == 0:
         raise ValueError(f"No API key with value '{key}' found.")
       
-      self.api_keys_df.loc[idx, ['last_used', 'last_usage']] = [last_used, usage_str]
+      self.api_keys_df.loc[idx, 'last_used'] = last_used
+      self.api_keys_df.loc[idx, 'last_ip_used'] = current_ip
       
       # Save the updated DataFrame back to the key store
       self.save()
 
+  def inc_usage_count(self, key) -> None:
+    self._read_keystore()
+    idx = self.api_keys_df[self.api_keys_df['value'] == key].index
+    if len(idx) == 0:
+        raise ValueError(f"No API key with value '{key}' found.")
 
+    self.api_keys_df.loc[idx, 'usage_count'] += 1
+    self.save()
+
+  def reset_usage_counts(self) -> None:
+    """
+    Reset the usage count of each key if the current time is more than a day since it was last used.
+    
+    :return: None
+    """
+    self._read_keystore()
+
+    for idx, row in self.api_keys_df.iterrows():
+      last_used_time = row['last_used']
+      if pd.isna(last_used_time) or (datetime.now() - last_used_time) > timedelta(days=1):
+        self.api_keys_df.at[idx, 'usage_count'] = 0
+
+    self.save()
+
+  def invalidate_key(self, key: str) -> None:
+    """
+    Invalidate a key purposely, so it won't be used for 24 hours.
+
+    :param key: The API key to invalidate.
+    :return: None
+    """
+    self._read_keystore()
+
+    idx = self.api_keys_df[self.api_keys_df['value'] == key].index
+    if len(idx) == 0:
+      raise ValueError(f"No API key with value '{key}' found.")
+
+    # Set the key's usage_count to 25 and last_used to the current time
+    self.api_keys_df.loc[idx, 'usage_count'] = 25
+    self.api_keys_df.loc[idx, 'last_used'] = datetime.now()
+
+    self.save()
+    
   def install_new_key(self, name: str, value: str) -> None:
     '''
     name is logical key name
@@ -900,7 +920,7 @@ class APIKeyManager:
     '''
     self._read_keystore()
    
-    new_key_row = pd.DataFrame([{'name': name, 'value': value, 'last_used': pd.NaT}])
+    new_key_row = pd.DataFrame([{'name': name, 'value': value, 'last_used': pd.NaT, 'lock': False, 'usage_count': 0}])
     self.api_keys_df = pd.concat([self.api_keys_df, new_key_row], axis=0, ignore_index=True)
 
     self.save()
@@ -937,12 +957,46 @@ class APIKeyManager:
     self.api_keys_df.loc[idx, 'lock'] = False
     self.save()
 
+  def unlock_all(self) -> None:
+    """ Unlock all API keys. """
+    self._read_keystore()
+    self.api_keys_df['lock'] = False
+    self.save()
+
   def save(self) -> None:
     self.api_keys_df.to_feather(self.key_store)
   
+  def get_public_ip(self) -> str:
+    """
+    Retrieve the current public IP address.
+
+    :return: The current public IP address as a string.
+    """
+    response = requests.get('https://httpbin.org/ip')
+    response.raise_for_status()  # Raise an exception for HTTP errors
+    return response.json()['origin']
+
+  def is_new_ip_for_key(self, key: str) -> bool:
+    """
+    Check if the current public IP is different from the last IP used with the given key.
+
+    :param key: The API key to check against.
+    :return: True if the current IP is different, False otherwise.
+    """
+    current_ip = self.get_public_ip()
+    row = self.api_keys_df.query("value == @key")
+    if len(row) > 0:
+      last_ip = row['last_ip_used'].iloc[0]
+      return current_ip != last_ip
+
+    return True  # If the key is not found, assume it's a new IP
+
   def _read_keystore(self) -> None:
     try:
       self.api_keys_df = pd.read_feather(self.key_store)
+      # sanity check presence of columns
+      assert set(self.api_keys_df.columns) == {'last_used', 'lock', 'name', 'usage_count', 'value', 'last_ip_used'}, "unexpected cols in key store df"
+
     except pd.errors.FeatherError as fe:
       raise ValueError(f"Error reading feather format from key store '{self.key_store}': {fe}")
     except Exception as e:        
